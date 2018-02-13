@@ -13,6 +13,7 @@
 #include "sai.h"
 #include <vector>
 #include <string.h>
+#include <arpa/inet.h>
 
 /* Global variables */
 sai_object_id_t gSwitchId = SAI_NULL_OBJECT_ID;
@@ -71,8 +72,9 @@ sai_object_id_t create_encap_tunnel_map_entry(
     attr.value.u32 = vni;
     tunnel_map_entry_attrs.push_back(attr);
 
-    sai_tunnel_api->create_tunnel_map(&tunnel_map_entry_id, gSwitchId, tunnel_map_entry_attrs.size(),
-                                      tunnel_map_entry_attrs.data());
+    sai_tunnel_api->create_tunnel_map_entry(&tunnel_map_entry_id, gSwitchId,
+                                            tunnel_map_entry_attrs.size(),
+                                            tunnel_map_entry_attrs.data());
 
     return tunnel_map_entry_id;
 }
@@ -119,8 +121,9 @@ sai_object_id_t create_decap_tunnel_map_entry(
     attr.value.oid = router_id;
     tunnel_map_entry_attrs.push_back(attr);
 
-    sai_tunnel_api->create_tunnel_map(&tunnel_map_entry_id, gSwitchId, tunnel_map_entry_attrs.size(),
-                                      tunnel_map_entry_attrs.data());
+    sai_tunnel_api->create_tunnel_map_entry(&tunnel_map_entry_id, gSwitchId,
+                                            tunnel_map_entry_attrs.size(),
+                                            tunnel_map_entry_attrs.data());
 
     return tunnel_map_entry_id;
 }
@@ -201,7 +204,8 @@ sai_status_t create_nexthop_tunnel(
     next_hop_attrs.push_back(next_hop_attr);
 
     next_hop_attr.id = SAI_NEXT_HOP_ATTR_IP;
-    next_hop_attr.value.ip4 = host_ip;
+    next_hop_attr.value.ipaddr.addr_family = SAI_IP_ADDR_FAMILY_IPV4;
+    next_hop_attr.value.ipaddr.addr.ip4 = htonl(host_ip);
     next_hop_attrs.push_back(next_hop_attr);
 
     next_hop_attr.id = SAI_NEXT_HOP_ATTR_TUNNEL_ID;
@@ -242,7 +246,7 @@ sai_status_t create_tunnel_termination(
     tunnel_attrs.push_back(attr);
 
     attr.id = SAI_TUNNEL_TERM_TABLE_ENTRY_ATTR_DST_IP;
-    attr.value.ip4 = dstip;
+    attr.value.ip4 = htonl(dstip);
     tunnel_attrs.push_back(attr);
 
     attr.id = SAI_TUNNEL_TERM_TABLE_ENTRY_ATTR_TUNNEL_TYPE;
@@ -278,8 +282,8 @@ sai_status_t create_route(
 
     sai_ip_prefix_t destination;
     destination.addr_family = SAI_IP_ADDR_FAMILY_IPV4;
-    destination.addr.ip4 = ip;
-    destination.mask.ip4 = mask;
+    destination.addr.ip4 = htonl(ip);
+    destination.mask.ip4 = htonl(mask);
     route_entry.destination = destination;
 
     sai_attribute_t attr;
@@ -300,7 +304,7 @@ sai_status_t create_neighbor(
     neigh_entry.switch_id = gSwitchId;
     neigh_entry.rif_id = rif_id;
     neigh_entry.ip_address.addr_family = SAI_IP_ADDR_FAMILY_IPV4;
-    neigh_entry.ip_address.addr.ip4 = ip;
+    neigh_entry.ip_address.addr.ip4 = htonl(ip);
 
     sai_attribute_t attr;
     attr.id = SAI_NEIGHBOR_ENTRY_ATTR_DST_MAC_ADDRESS;
@@ -323,7 +327,7 @@ sai_object_id_t create_nexthop(
 
     next_hop_attr.id = SAI_NEXT_HOP_ATTR_IP;
     next_hop_attr.value.ipaddr.addr_family = SAI_IP_ADDR_FAMILY_IPV4;
-    next_hop_attr.value.ipaddr.addr.ip4 = ip;
+    next_hop_attr.value.ipaddr.addr.ip4 = htonl(ip);
     next_hop_attrs.push_back(next_hop_attr);
 
     next_hop_attr.id = SAI_NEXT_HOP_ATTR_ROUTER_INTERFACE_ID;
@@ -451,11 +455,15 @@ int main(void)
 
     create_router_interface_port(default_vrid, port_id_5, gSwitchMac, &rif_id);
     ip4 = 0x01010101; //1.1.1.1
+    sai_mac_t underlay_mac1 = {0x00,0x00,0x0a,0x0b,0x0c,0x01};
+    status = create_neighbor(ip4, rif_id, underlay_mac1);
     nh_id = create_nexthop(ip4, rif_id);
     nh_ids.push_back(nh_id);
 
     create_router_interface_port(default_vrid, port_id_6, gSwitchMac, &rif_id);
     ip4 = 0x02020201; //2.2.2.1
+    sai_mac_t underlay_mac2 = {0x00,0x00,0x0a,0x0b,0x0c,0x02};
+    status = create_neighbor(ip4, rif_id, underlay_mac2);
     nh_id = create_nexthop(ip4, rif_id);
     nh_ids.push_back(nh_id);
 
