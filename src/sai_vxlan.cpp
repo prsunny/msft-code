@@ -133,6 +133,7 @@ sai_object_id_t create_decap_tunnel_map_entry(
 sai_status_t create_tunnel(
     sai_object_id_t ingress_router_id,
     sai_object_id_t egress_router_id,
+    sai_object_id_t underlay_rif,
     sai_uint32_t vni,
     sai_object_id_t *tunnel_id,
     sai_object_id_t *tunnel_encap_map_id,
@@ -146,6 +147,10 @@ sai_status_t create_tunnel(
 
 	attr.id = SAI_TUNNEL_ATTR_TYPE;
 	attr.value.s32 = SAI_TUNNEL_TYPE_VXLAN;
+	tunnel_attrs.push_back(attr);
+
+	attr.id = SAI_TUNNEL_ATTR_UNDERLAY_INTERFACE;
+	attr.value.oid = underlay_rif;
 	tunnel_attrs.push_back(attr);
 
 	*tunnel_encap_map_id = create_encap_tunnel_map();
@@ -235,6 +240,7 @@ sai_status_t create_nexthop_tunnel(
 
 sai_status_t create_tunnel_termination(
     sai_object_id_t oid,  // tunnel oid
+    sai_object_id_t vrid,
     sai_ip4_t dstip,      // tunnel dstip ip
     sai_object_id_t *term_table_id)
 {
@@ -242,7 +248,7 @@ sai_status_t create_tunnel_termination(
     std::vector<sai_attribute_t> tunnel_attrs;
 
     attr.id = SAI_TUNNEL_TERM_TABLE_ENTRY_ATTR_TYPE;
-    attr.value.oid = SAI_TUNNEL_TERM_TABLE_ENTRY_TYPE_P2MP;
+    attr.value.s32 = SAI_TUNNEL_TERM_TABLE_ENTRY_TYPE_P2MP;
     tunnel_attrs.push_back(attr);
 
     attr.id = SAI_TUNNEL_TERM_TABLE_ENTRY_ATTR_DST_IP;
@@ -250,11 +256,15 @@ sai_status_t create_tunnel_termination(
     tunnel_attrs.push_back(attr);
 
     attr.id = SAI_TUNNEL_TERM_TABLE_ENTRY_ATTR_TUNNEL_TYPE;
-    attr.value.oid = SAI_TUNNEL_TYPE_VXLAN;
+    attr.value.s32 = SAI_TUNNEL_TYPE_VXLAN;
     tunnel_attrs.push_back(attr);
 
     attr.id = SAI_TUNNEL_TERM_TABLE_ENTRY_ATTR_ACTION_TUNNEL_ID;
     attr.value.oid = oid;
+    tunnel_attrs.push_back(attr);
+
+    attr.id = SAI_TUNNEL_TERM_TABLE_ENTRY_ATTR_VR_ID;
+    attr.value.oid = vrid;
     tunnel_attrs.push_back(attr);
 
     sai_status_t status;
@@ -375,6 +385,33 @@ sai_object_id_t create_nexthop_group(const std::vector<sai_object_id_t>& nh_ids)
     return next_hop_group_id;
 }
 
+sai_status_t create_router_interface_lb(
+    sai_object_id_t router_id,
+    sai_mac_t mac,
+    sai_object_id_t *router_intf)
+{
+    sai_attribute_t attr;
+    std::vector<sai_attribute_t> attrs;
+
+    attr.id = SAI_ROUTER_INTERFACE_ATTR_VIRTUAL_ROUTER_ID;
+    attr.value.oid = router_id;
+    attrs.push_back(attr);
+
+    if (mac != NULL)
+    {
+        attr.id = SAI_ROUTER_INTERFACE_ATTR_SRC_MAC_ADDRESS;
+        memcpy(attr.value.mac, mac, sizeof(sai_mac_t));
+        attrs.push_back(attr);
+    }
+
+    attr.id = SAI_ROUTER_INTERFACE_ATTR_TYPE;
+    attr.value.s32 = SAI_ROUTER_INTERFACE_TYPE_LOOPBACK;
+    attrs.push_back(attr);
+
+    sai_status_t status = sai_router_intfs_api->create_router_interface(router_intf, gSwitchId,
+                                                (uint32_t)attrs.size(), attrs.data());
+}
+
 sai_status_t create_router_interface_port(
     sai_object_id_t router_id,
     sai_object_id_t port_id,
@@ -451,7 +488,9 @@ int main(void)
      * Setup underlay default route, the nexthop is 1.1.1.1, 2.2.2.1 (ECMP)
      */
     std::vector<sai_object_id_t> nh_ids;
-    sai_object_id_t nh_id, rif_id;
+    sai_object_id_t nh_id, rif_id, underlay_rif;
+
+    create_router_interface_lb(default_vrid, gSwitchMac, &underlay_rif);
 
     create_router_interface_port(default_vrid, port_id_5, gSwitchMac, &rif_id);
     ip4 = 0x01010101; //1.1.1.1
@@ -509,18 +548,18 @@ int main(void)
     status = create_router_interface_port(vrid_2_ingress, port_id_3, NULL, &rif_3);
     ip4 = 0x64660101; //"100.102.1.1" ;
     sai_mac_t mac_3 = {0x00,0x00,0x00,0x00,0x00,0x03}; //"00:00:00:00:00:03"
-    status = create_neighbor(ip4, rif_2, mac_3);
+    status = create_neighbor(ip4, rif_3, mac_3);
 
     /* create port-based router interface for C4 */
     status = create_router_interface_port(vrid_3_ingress, port_id_4, NULL, &rif_4);
     ip4 = 0x64650101; //"100.101.1.1" ;
     sai_mac_t mac_4 = {0x00,0x00,0x00,0x00,0x00,0x04}; //"00:00:00:00:00:04"
-    status = create_neighbor(ip4, rif_2, mac_4);
+    status = create_neighbor(ip4, rif_3, mac_4);
 
 
     /* create tunnel with tunnel map for C1 and C2 */
     sai_object_id_t tunnel_id, tunnel_encap_map_id, tunnel_decap_map_id;
-    status = create_tunnel(vrid_1_ingress, vrid_1_egress, 2000,
+    status = create_tunnel(vrid_1_ingress, vrid_1_egress, underlay_rif, 2000,
                            &tunnel_id, &tunnel_encap_map_id, &tunnel_decap_map_id);
 
     /* add tunnel map entry for C3 */
@@ -534,7 +573,7 @@ int main(void)
     /* create tunnel decap for VM to customer server */
     ip4 = 0x0a0a0a0a; // "10.10.10.10"
     sai_object_id_t term_table_id;
-    status = create_tunnel_termination(tunnel_id, ip4, &term_table_id);
+    status = create_tunnel_termination(tunnel_id, default_vrid, ip4, &term_table_id);
 
     /* create tunnel nexthop for VM1, VM2 and VM3 */
     sai_object_id_t nexthop_id_1, nexthop_id_2, nexthop_id_3;
