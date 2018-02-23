@@ -490,6 +490,7 @@ int main(void)
     std::vector<sai_object_id_t> nh_ids;
     sai_object_id_t nh_id, rif_id, underlay_rif;
 
+    //Mandatory attribute for tunnel creation
     create_router_interface_lb(default_vrid, gSwitchMac, &underlay_rif);
 
     create_router_interface_port(default_vrid, port_id_5, gSwitchMac, &rif_id);
@@ -554,8 +555,7 @@ int main(void)
     status = create_router_interface_port(vrid_3_ingress, port_id_4, NULL, &rif_4);
     ip4 = 0x64650101; //"100.101.1.1" ;
     sai_mac_t mac_4 = {0x00,0x00,0x00,0x00,0x00,0x04}; //"00:00:00:00:00:04"
-    status = create_neighbor(ip4, rif_3, mac_4);
-
+    status = create_neighbor(ip4, rif_4, mac_4);
 
     /* create tunnel with tunnel map for C1 and C2 */
     sai_object_id_t tunnel_id, tunnel_encap_map_id, tunnel_decap_map_id;
